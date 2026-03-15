@@ -1,192 +1,168 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-const STORAGE_KEY = 'luau-ai-history-v2';
-const SETTINGS_KEY = 'luau-ai-settings-v2';
-
-const starterPrompts = [
-  'Crie um sistema modular em Luau com boas práticas e comentários úteis.',
-  'Explique este erro em Luau e diga como corrigir sem enrolação.',
-  'Monte uma arquitetura de pastas para Roblox com ModuleScripts, Remotes e Services.',
-  'Analise esse script e reescreva de forma mais segura e performática.'
-];
-
-const defaultPrompt =
-  'Você é uma IA especialista em Lua, Luau, Roblox Studio e programação legítima. Responda em português do Brasil, seja claro, técnico quando necessário, gere código limpo, modular e comentado, e recuse pedidos de exploits, bypasses ou scripts maliciosos.';
-
-const defaultApi = 'http://localhost:3000/api/chat';
-
-function uid() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
+const defaultApi = "https://luauai-api.onrender.com/api/chat";
+const STORAGE_KEY = "luau-ai-state-v3";
 
 function extractCodeBlocks(text) {
-  const match = String(text || '').match(/```(?:lua|luau|js|javascript|ts|tsx|json)?\n([\s\S]*?)```/i);
-  return match?.[1]?.trim() || '';
+  if (!text) return [];
+  const matches = [...String(text).matchAll(/```(?:\w+)?\n([\s\S]*?)```/g)];
+  return matches.map((m) => m[1].trim()).filter(Boolean);
 }
 
-export default function App() {
-  const fileInputRef = useRef(null);
-  const chatEndRef = useRef(null);
+function App() {
+  const [messages, setMessages] = useState([
+    {
+      role: "assistant",
+      content:
+        "Fala. Eu já tô pronto para Lua/Luau, revisão de código, arquitetura e leitura de imagem via Gemini.",
+    },
+  ]);
 
-  const [messages, setMessages] = useState(() => {
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [copyOk, setCopyOk] = useState(false);
+  const [downloadOk, setDownloadOk] = useState(false);
+  const [expandedCode, setExpandedCode] = useState(false);
+
+  const [settings, setSettings] = useState({
+    apiUrl: defaultApi,
+    token: "",
+    model: "gemini-2.5-flash",
+    systemPrompt:
+      "Você é uma IA especialista em Lua, Luau, Roblox e programação legítima. Responda em português, seja objetiva, gere código limpo e bem formatado, explique quando necessário, e nunca ajude com exploits, bypasses ou ações maliciosas.",
+  });
+
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed.messages) setMessages(parsed.messages);
+      if (parsed.settings) {
+        setSettings((prev) => ({
+          ...prev,
+          ...parsed.settings,
+          apiUrl: parsed.settings.apiUrl || defaultApi,
+        }));
+      }
     } catch {}
-    return [
-      {
-        id: uid(),
-        role: 'assistant',
-        content: 'Fala. Eu já tô pronto para Lua/Luau, revisão de código, arquitetura e leitura de imagem via Gemini.',
-        createdAt: Date.now(),
-      },
-    ];
-  });
-
-  const [settings, setSettings] = useState(() => {
-    try {
-      const raw = localStorage.getItem(SETTINGS_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    return {
-      apiUrl: defaultApi,
-      apiKey: '',
-      systemPrompt: defaultPrompt,
-      model: 'gemini-2.5-flash',
-    };
-  });
-
-  const [input, setInput] = useState('');
-  const [pendingImage, setPendingImage] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState('Pronto.');
-  const [codeCopied, setCodeCopied] = useState(false);
-  const [isCodeExpanded, setIsCodeExpanded] = useState(false);
-  const [code, setCode] = useState(`-- Exemplo Luau\nlocal Players = game:GetService("Players")\n\nlocal function onPlayerAdded(player)\n    print("Jogador entrou:", player.Name)\nend\n\nPlayers.PlayerAdded:Connect(onPlayerAdded)`);
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          messages,
+          settings,
+        })
+      );
+    } catch {}
+  }, [messages, settings]);
+
+  const detectedCode = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") {
+        const blocks = extractCodeBlocks(messages[i].content);
+        if (blocks.length) return blocks.join("\n\n--[[ próximo bloco ]]--\n\n");
+      }
+    }
+    return `-- Exemplo Luau
+local Players = game:GetService("Players")
+
+local function onPlayerAdded(player)
+    print("Jogador entrou:", player.Name)
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)`;
   }, [messages]);
 
-  useEffect(() => {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  }, [settings]);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
-
-  const canSend = useMemo(() => {
-    return Boolean(settings.apiUrl.trim()) && (Boolean(input.trim()) || Boolean(pendingImage)) && !loading;
-  }, [settings.apiUrl, input, pendingImage, loading]);
-
-  const showExpandCode = useMemo(() => {
-    return code.length > 420 || code.split('\n').length > 14;
-  }, [code]);
+  const isCodeLong = detectedCode.split("\n").length > 18 || detectedCode.length > 700;
 
   function updateSetting(key, value) {
     setSettings((prev) => ({ ...prev, [key]: value }));
   }
 
-  function usePrompt(prompt) {
-    setInput(prompt);
-    setStatus('Prompt aplicado.');
-  }
-
-  async function handlePickImage(event) {
-    const file = event.target.files?.[0];
+  function onChooseImage(e) {
+    const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setStatus('Escolha uma imagem válida.');
-      return;
-    }
-    const dataUrl = await fileToDataUrl(file);
-    setPendingImage({
-      name: file.name,
-      mimeType: file.type,
-      dataUrl,
-    });
-    setStatus('Imagem anexada.');
-    event.target.value = '';
-  }
+    setSelectedImage(file);
 
-  function clearImage() {
-    setPendingImage(null);
-  }
-
-  function clearHistory() {
-    const initial = [
-      {
-        id: uid(),
-        role: 'assistant',
-        content: 'Histórico limpo. Pode começar outra conversa.',
-        createdAt: Date.now(),
-      },
-    ];
-    setMessages(initial);
-    setCode(`-- Exemplo Luau\nprint("Histórico limpo")`);
-    setStatus('Histórico apagado.');
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImagePreview(String(reader.result || ""));
+    };
+    reader.readAsDataURL(file);
   }
 
   async function copyCode() {
     try {
-      await navigator.clipboard.writeText(code);
-      setCodeCopied(true);
-      setStatus('Código copiado.');
-      setTimeout(() => setCodeCopied(false), 1200);
-    } catch {
-      setStatus('Não consegui copiar o código.');
-    }
+      await navigator.clipboard.writeText(detectedCode);
+      setCopyOk(true);
+      setTimeout(() => setCopyOk(false), 1400);
+    } catch {}
+  }
+
+  function downloadCode() {
+    try {
+      const blob = new Blob([detectedCode], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "codigo-luau.txt";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setDownloadOk(true);
+      setTimeout(() => setDownloadOk(false), 1400);
+    } catch {}
   }
 
   async function sendMessage() {
-    if (!canSend) return;
+    if (!input.trim() && !selectedImage) return;
+    if (!settings.apiUrl.trim()) return;
 
-    const userMessage = {
-      id: uid(),
-      role: 'user',
-      content: input.trim() || (pendingImage ? 'Analise esta imagem.' : ''),
-      image: pendingImage,
-      createdAt: Date.now(),
-    };
+    const nextMessages = [
+      ...messages,
+      {
+        role: "user",
+        content: input.trim() || "Analise a imagem enviada.",
+        image: imagePreview || null,
+      },
+    ];
 
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
-    setInput('');
-    setPendingImage(null);
+    setMessages(nextMessages);
     setLoading(true);
-    setStatus('Consultando backend...');
 
     try {
-      const response = await fetch(settings.apiUrl, {
-        method: 'POST',
+      const res = await fetch(settings.apiUrl, {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          ...(settings.apiKey.trim() ? { Authorization: `Bearer ${settings.apiKey.trim()}` } : {}),
+          "Content-Type": "application/json",
+          ...(settings.token.trim()
+            ? { Authorization: `Bearer ${settings.token.trim()}` }
+            : {}),
         },
         body: JSON.stringify({
           system: settings.systemPrompt,
           model: settings.model,
-          messages: newMessages.map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-            image: msg.image || null,
+          messages: nextMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+            image: m.image || null,
           })),
         }),
       });
 
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data?.error || data?.response || `Erro HTTP ${response.status}`);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.error || data?.message || "Falha na API");
       }
 
       const assistantText =
@@ -195,213 +171,671 @@ export default function App() {
         data.message ||
         data.content ||
         data?.choices?.[0]?.message?.content ||
-        'A API respondeu, mas sem um campo de texto reconhecido.';
-
-      const codeBlock = extractCodeBlocks(assistantText);
-      if (codeBlock) setCode(codeBlock);
+        "Sem resposta de texto.";
 
       setMessages((prev) => [
         ...prev,
         {
-          id: uid(),
-          role: 'assistant',
-          content: assistantText,
-          createdAt: Date.now(),
+          role: "assistant",
+          content: String(assistantText),
         },
       ]);
-      setStatus('Resposta recebida.');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erro inesperado.';
+
+      setInput("");
+      setSelectedImage(null);
+      setImagePreview("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (err) {
       setMessages((prev) => [
         ...prev,
         {
-          id: uid(),
-          role: 'assistant',
-          content: `Não consegui falar com a API. Detalhe: ${message}`,
-          createdAt: Date.now(),
+          role: "assistant",
+          content: `Não consegui falar com a API. Detalhe: ${
+            err?.message || "Failed to fetch"
+          }`,
         },
       ]);
-      setStatus(message);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <>
-      <div className="app-shell">
-        <div className="aurora aurora-a" />
-        <div className="aurora aurora-b" />
+    <div style={styles.page}>
+      <div style={styles.bgGlowA} />
+      <div style={styles.bgGlowB} />
 
-        <aside className="sidebar glass">
-          <div className="brand-box">
-            <div className="brand-icon">L</div>
-            <div>
-              <div className="eyebrow">AXIOLA LABS</div>
-              <h1>Luau AI</h1>
-              <p>Visual de app, histórico salvo e leitura de imagem.</p>
+      <div style={styles.container}>
+        <section style={styles.topCard}>
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Peça código, análise, explicação, revisão ou mande uma imagem com contexto."
+            style={styles.promptInput}
+          />
+
+          {imagePreview ? (
+            <div style={styles.previewWrap}>
+              <img src={imagePreview} alt="preview" style={styles.previewImage} />
+              <button
+                style={styles.smallGhostBtn}
+                onClick={() => {
+                  setSelectedImage(null);
+                  setImagePreview("");
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+              >
+                Remover imagem
+              </button>
             </div>
-          </div>
+          ) : null}
 
-          <div className="section-block">
-            <div className="section-title">Conexão</div>
-            <label>Endpoint</label>
-            <input value={settings.apiUrl} onChange={(e) => updateSetting('apiUrl', e.target.value)} placeholder="http://localhost:3000/api/chat" />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={onChooseImage}
+            style={{ display: "none" }}
+          />
 
-            <label>Token</label>
-            <input value={settings.apiKey} onChange={(e) => updateSetting('apiKey', e.target.value)} placeholder="Vazio no backend local" type="password" />
+          <button style={styles.secondaryBtn} onClick={() => fileInputRef.current?.click()}>
+            Enviar imagem
+          </button>
 
-            <label>Modelo</label>
-            <input value={settings.model} onChange={(e) => updateSetting('model', e.target.value)} placeholder="gemini-2.5-flash" />
+          <button style={styles.primaryBtn} onClick={sendMessage} disabled={loading}>
+            {loading ? "Enviando..." : "Enviar"}
+          </button>
+        </section>
 
-            <label>System prompt</label>
-            <textarea value={settings.systemPrompt} onChange={(e) => updateSetting('systemPrompt', e.target.value)} />
-          </div>
+        <section style={styles.codeSection}>
+          <div style={styles.sectionHeader}>
+            <div>
+              <div style={styles.sectionTitle}>Saída de código</div>
+              <div style={styles.sectionSubtitle}>
+                Blocos detectados na resposta aparecem aqui.
+              </div>
+            </div>
 
-          <div className="section-block">
-            <div className="section-title">Ações</div>
-            <div className="quick-grid">
-              {starterPrompts.map((prompt) => (
-                <button key={prompt} className="soft-btn" onClick={() => usePrompt(prompt)}>
-                  {prompt}
+            <div style={styles.codeActions}>
+              <button
+                style={styles.iconBtn}
+                onClick={copyCode}
+                title="Copiar código"
+                aria-label="Copiar código"
+              >
+                <span style={styles.copyIcon}>
+                  <span style={styles.copyBack} />
+                  <span style={styles.copyFront} />
+                </span>
+              </button>
+
+              <button
+                style={styles.iconBtn}
+                onClick={downloadCode}
+                title="Baixar código"
+                aria-label="Baixar código"
+              >
+                <span style={styles.downloadIcon}>
+                  <span style={styles.downloadArrow} />
+                  <span style={styles.downloadBase} />
+                </span>
+              </button>
+
+              {isCodeLong ? (
+                <button style={styles.expandBtn} onClick={() => setExpandedCode(true)}>
+                  Maximizar
                 </button>
-              ))}
+              ) : null}
             </div>
           </div>
 
-          <div className="section-block section-row">
-            <button className="ghost-btn" onClick={clearHistory}>Limpar histórico</button>
-            <button className="ghost-btn" onClick={copyCode}>{codeCopied ? 'Copiado' : 'Copiar código'}</button>
-          </div>
-        </aside>
+          {copyOk ? <div style={styles.toast}>Código copiado</div> : null}
+          {downloadOk ? <div style={styles.toast}>Download iniciado</div> : null}
 
-        <main className="main-panel">
-          <section className="hero glass">
+          <div style={styles.codeOuter}>
+            <pre style={styles.codeBlock}>
+              <code>{detectedCode}</code>
+            </pre>
+          </div>
+        </section>
+
+        <section style={styles.infoCard}>
+          <div style={styles.brandRow}>
+            <div style={styles.logoBox}>L</div>
             <div>
-              <div className="eyebrow">MULTIMODAL • LOCAL • GEMINI</div>
-              <h2>Seu app de IA para Lua/Luau</h2>
-              <p>
-                Conversa salva, visual mais bonito, anexos de imagem, leitura de prints e foco em programação legítima.
-              </p>
-            </div>
-            <div className="hero-stats">
-              <div className="stat-card">
-                <span>Mensagens</span>
-                <strong>{messages.length}</strong>
-              </div>
-              <div className="stat-card">
-                <span>Status</span>
-                <strong>{loading ? 'Pensando' : 'Online'}</strong>
+              <div style={styles.brandMini}>AXIOLA LABS</div>
+              <div style={styles.brandTitle}>Luau AI</div>
+              <div style={styles.brandSub}>
+                Visual de app, histórico salvo e leitura de imagem.
               </div>
             </div>
-          </section>
+          </div>
 
-          <section className="content-grid">
-            <div className="chat-panel glass">
-              <div className="panel-head">
-                <div>
-                  <div className="panel-title">Chat</div>
-                  <div className="panel-subtitle">{status}</div>
-                </div>
-                <div className="status-dot-wrap">
-                  <span className={`status-dot ${loading ? 'busy' : 'ok'}`} />
-                </div>
-              </div>
+          <div style={styles.formCard}>
+            <div style={styles.label}>Conexão</div>
 
-              <div className="chat-feed">
-                {messages.map((msg) => (
-                  <div key={msg.id} className={`bubble ${msg.role === 'user' ? 'bubble-user' : 'bubble-assistant'}`}>
-                    <div className="bubble-meta">{msg.role}</div>
-                    <div className="bubble-text">{msg.content}</div>
-                    {msg.image?.dataUrl && (
-                      <img className="chat-image" src={msg.image.dataUrl} alt={msg.image.name || 'imagem enviada'} />
-                    )}
-                  </div>
-                ))}
-                {loading && <div className="bubble bubble-assistant"><div className="bubble-meta">assistant</div><div className="bubble-text">Gerando resposta...</div></div>}
-                <div ref={chatEndRef} />
-              </div>
+            <div style={styles.fieldLabel}>Endpoint</div>
+            <input
+              value={settings.apiUrl}
+              onChange={(e) => updateSetting("apiUrl", e.target.value)}
+              placeholder="https://luauai-api.onrender.com/api/chat"
+              style={styles.input}
+            />
 
-              {pendingImage && (
-                <div className="attachment-box">
-                  <img src={pendingImage.dataUrl} alt={pendingImage.name} />
-                  <div className="attachment-info">
-                    <strong>{pendingImage.name}</strong>
-                    <span>{pendingImage.mimeType}</span>
-                  </div>
-                  <button className="ghost-btn" onClick={clearImage}>Remover</button>
-                </div>
-              )}
+            <div style={styles.fieldLabel}>Token</div>
+            <input
+              value={settings.token}
+              onChange={(e) => updateSetting("token", e.target.value)}
+              placeholder="Vazio no backend online"
+              style={styles.input}
+            />
 
-              <div className="composer">
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Peça código, análise, explicação, revisão ou mande uma imagem com contexto."
-                />
-                <div className="composer-actions">
-                  <button className="ghost-btn" onClick={() => fileInputRef.current?.click()}>Enviar imagem</button>
-                  <button className="send-btn" onClick={sendMessage} disabled={!canSend}>Enviar</button>
-                </div>
-                <input ref={fileInputRef} hidden type="file" accept="image/*" onChange={handlePickImage} />
-              </div>
+            <div style={styles.fieldLabel}>Modelo</div>
+            <input
+              value={settings.model}
+              onChange={(e) => updateSetting("model", e.target.value)}
+              style={styles.input}
+            />
+
+            <div style={styles.fieldLabel}>System prompt</div>
+            <textarea
+              value={settings.systemPrompt}
+              onChange={(e) => updateSetting("systemPrompt", e.target.value)}
+              style={styles.systemPrompt}
+            />
+          </div>
+        </section>
+
+        <section style={styles.chatSection}>
+          {messages.map((msg, i) => (
+            <div
+              key={i}
+              style={{
+                ...styles.message,
+                ...(msg.role === "assistant" ? styles.assistantBubble : styles.userBubble),
+              }}
+            >
+              <div style={styles.roleText}>{msg.role}</div>
+              <div style={styles.messageText}>{msg.content}</div>
+              {msg.image ? <img src={msg.image} alt="upload" style={styles.messageImage} /> : null}
             </div>
-
-            <div className="code-panel glass">
-              <div className="panel-head panel-head-code">
-                <div>
-                  <div className="panel-title">Saída de código</div>
-                  <div className="panel-subtitle">Blocos detectados na resposta aparecem aqui.</div>
-                </div>
-
-                <div className="code-actions">
-                  <button className="icon-btn" onClick={copyCode} title="Copiar código" aria-label="Copiar código">
-                    <span className="copy-icon" aria-hidden="true">
-                      <span className="copy-square copy-square-back" />
-                      <span className="copy-square copy-square-front" />
-                    </span>
-                  </button>
-
-                  {showExpandCode && (
-                    <button className="ghost-btn code-expand-btn" onClick={() => setIsCodeExpanded(true)}>
-                      Maximizar
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <pre className="code-block"><code>{code}</code></pre>
-            </div>
-          </section>
-        </main>
+          ))}
+        </section>
       </div>
 
-      {isCodeExpanded && (
-        <div className="code-modal-overlay" onClick={() => setIsCodeExpanded(false)}>
-          <div className="code-modal glass" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-head panel-head-code modal-head">
-              <div>
-                <div className="panel-title">Código completo</div>
-                <div className="panel-subtitle">Visualização expandida para ler o código inteiro.</div>
-              </div>
-
-              <div className="code-actions">
-                <button className="icon-btn" onClick={copyCode} title="Copiar código" aria-label="Copiar código">
-                  <span className="copy-icon" aria-hidden="true">
-                    <span className="copy-square copy-square-back" />
-                    <span className="copy-square copy-square-front" />
+      {expandedCode ? (
+        <div style={styles.modalOverlay} onClick={() => setExpandedCode(false)}>
+          <div style={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <div style={styles.modalTitle}>Código completo</div>
+              <div style={styles.codeActions}>
+                <button style={styles.iconBtn} onClick={copyCode} aria-label="Copiar código">
+                  <span style={styles.copyIcon}>
+                    <span style={styles.copyBack} />
+                    <span style={styles.copyFront} />
                   </span>
                 </button>
-                <button className="ghost-btn code-expand-btn" onClick={() => setIsCodeExpanded(false)}>
+                <button style={styles.iconBtn} onClick={downloadCode} aria-label="Baixar código">
+                  <span style={styles.downloadIcon}>
+                    <span style={styles.downloadArrow} />
+                    <span style={styles.downloadBase} />
+                  </span>
+                </button>
+                <button style={styles.expandBtn} onClick={() => setExpandedCode(false)}>
                   Fechar
                 </button>
               </div>
             </div>
 
-            <pre className="code-block code-block-expanded"><code>{code}</code></pre>
+            <pre style={styles.modalCodeBlock}>
+              <code>{detectedCode}</code>
+            </pre>
           </div>
         </div>
-      )}
-    </>
+      ) : null}
+    </div>
   );
 }
+
+const styles = {
+  page: {
+    minHeight: "100vh",
+    background:
+      "radial-gradient(circle at top left, rgba(14,95,170,0.25), transparent 28%), linear-gradient(180deg, #03111f 0%, #020915 100%)",
+    color: "#eaf4ff",
+    fontFamily: "Inter, Arial, sans-serif",
+    padding: "18px 14px 40px",
+  },
+
+  bgGlowA: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    width: 220,
+    height: 220,
+    background: "rgba(0,180,255,0.10)",
+    filter: "blur(70px)",
+    borderRadius: 999,
+    pointerEvents: "none",
+  },
+
+  bgGlowB: {
+    position: "fixed",
+    bottom: 0,
+    right: 0,
+    width: 220,
+    height: 220,
+    background: "rgba(0,255,170,0.10)",
+    filter: "blur(80px)",
+    borderRadius: 999,
+    pointerEvents: "none",
+  },
+
+  container: {
+    maxWidth: 900,
+    margin: "0 auto",
+    position: "relative",
+    zIndex: 1,
+  },
+
+  topCard: {
+    background: "rgba(11,20,40,0.78)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 26,
+    padding: 18,
+    boxShadow: "0 10px 35px rgba(0,0,0,0.28)",
+    backdropFilter: "blur(10px)",
+  },
+
+  promptInput: {
+    width: "100%",
+    minHeight: 120,
+    background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    color: "#eaf4ff",
+    borderRadius: 20,
+    padding: 16,
+    boxSizing: "border-box",
+    fontSize: 16,
+    resize: "vertical",
+    outline: "none",
+    marginBottom: 14,
+  },
+
+  previewWrap: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    marginBottom: 12,
+  },
+
+  previewImage: {
+    width: "100%",
+    maxHeight: 240,
+    objectFit: "cover",
+    borderRadius: 16,
+    border: "1px solid rgba(255,255,255,0.08)",
+  },
+
+  secondaryBtn: {
+    width: "100%",
+    marginBottom: 12,
+    borderRadius: 18,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+    color: "#f4f8ff",
+    padding: "15px 16px",
+    fontSize: 16,
+  },
+
+  primaryBtn: {
+    width: "100%",
+    borderRadius: 18,
+    border: "none",
+    background: "linear-gradient(90deg, #29d48c, #3f8dff)",
+    color: "#04111d",
+    fontWeight: 800,
+    padding: "15px 16px",
+    fontSize: 17,
+  },
+
+  smallGhostBtn: {
+    alignSelf: "flex-start",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+    color: "#f4f8ff",
+    padding: "10px 12px",
+  },
+
+  codeSection: {
+    marginTop: 22,
+    background: "rgba(5,15,35,0.86)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 26,
+    padding: 18,
+  },
+
+  sectionHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 14,
+  },
+
+  sectionTitle: {
+    fontSize: 28,
+    fontWeight: 800,
+    lineHeight: 1.05,
+  },
+
+  sectionSubtitle: {
+    fontSize: 14,
+    color: "#a8bdd4",
+    marginTop: 6,
+  },
+
+  codeActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    flexShrink: 0,
+  },
+
+  iconBtn: {
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.04)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+
+  copyIcon: {
+    position: "relative",
+    width: 20,
+    height: 20,
+    display: "inline-block",
+  },
+
+  copyBack: {
+    position: "absolute",
+    width: 12,
+    height: 12,
+    border: "2px solid #8ea7c0",
+    borderRadius: 4,
+    top: 1,
+    left: 1,
+  },
+
+  copyFront: {
+    position: "absolute",
+    width: 12,
+    height: 12,
+    border: "2px solid #ffffff",
+    borderRadius: 4,
+    top: 6,
+    left: 6,
+  },
+
+  downloadIcon: {
+    position: "relative",
+    width: 18,
+    height: 20,
+    display: "inline-block",
+  },
+
+  downloadArrow: {
+    position: "absolute",
+    left: 7,
+    top: 1,
+    width: 2,
+    height: 10,
+    background: "#ffffff",
+    boxShadow: "0 0 0 1px rgba(255,255,255,0.02)",
+  },
+
+  downloadBase: {
+    position: "absolute",
+    left: 3,
+    bottom: 2,
+    width: 12,
+    height: 2,
+    background: "#ffffff",
+    boxShadow: "0 -6px 0 0 transparent",
+    borderRadius: 2,
+  },
+
+  expandBtn: {
+    height: 50,
+    borderRadius: 16,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.04)",
+    color: "#f4f8ff",
+    padding: "0 16px",
+    fontWeight: 700,
+  },
+
+  toast: {
+    marginBottom: 12,
+    fontSize: 13,
+    color: "#9ee5c8",
+  },
+
+  codeOuter: {
+    width: "100%",
+    overflowX: "auto",
+    WebkitOverflowScrolling: "touch",
+    borderRadius: 22,
+    background: "#020814",
+    border: "1px solid rgba(255,255,255,0.05)",
+  },
+
+  codeBlock: {
+    margin: 0,
+    minWidth: "100%",
+    width: "max-content",
+    maxWidth: "none",
+    padding: 18,
+    fontSize: 15,
+    lineHeight: 1.65,
+    color: "#eaf4ff",
+    whiteSpace: "pre",
+    overflowX: "visible",
+    boxSizing: "border-box",
+  },
+
+  infoCard: {
+    marginTop: 22,
+    background: "rgba(8,18,37,0.82)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 26,
+    padding: 18,
+  },
+
+  brandRow: {
+    display: "flex",
+    gap: 14,
+    alignItems: "center",
+    marginBottom: 20,
+  },
+
+  logoBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    background: "linear-gradient(135deg, #3bffd5, #5aa9ff)",
+    color: "#04111d",
+    fontWeight: 900,
+    fontSize: 28,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxShadow: "0 0 30px rgba(59,255,213,0.18)",
+  },
+
+  brandMini: {
+    fontSize: 13,
+    letterSpacing: "0.22em",
+    color: "#9be6d0",
+  },
+
+  brandTitle: {
+    fontSize: 28,
+    fontWeight: 800,
+    marginTop: 2,
+  },
+
+  brandSub: {
+    color: "#a8bdd4",
+    marginTop: 4,
+  },
+
+  formCard: {
+    background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    borderRadius: 22,
+    padding: 16,
+  },
+
+  label: {
+    fontWeight: 800,
+    marginBottom: 10,
+    fontSize: 22,
+  },
+
+  fieldLabel: {
+    fontSize: 14,
+    color: "#c8d8ea",
+    marginBottom: 8,
+    marginTop: 12,
+  },
+
+  input: {
+    width: "100%",
+    height: 54,
+    borderRadius: 18,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+    color: "#f5f9ff",
+    padding: "0 14px",
+    boxSizing: "border-box",
+    fontSize: 16,
+    outline: "none",
+  },
+
+  systemPrompt: {
+    width: "100%",
+    minHeight: 120,
+    borderRadius: 18,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+    color: "#f5f9ff",
+    padding: 14,
+    boxSizing: "border-box",
+    fontSize: 15,
+    outline: "none",
+    resize: "vertical",
+  },
+
+  chatSection: {
+    marginTop: 22,
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+  },
+
+  message: {
+    borderRadius: 20,
+    padding: 14,
+    border: "1px solid rgba(255,255,255,0.08)",
+  },
+
+  assistantBubble: {
+    background: "rgba(255,255,255,0.03)",
+  },
+
+  userBubble: {
+    background: "rgba(41,212,140,0.10)",
+  },
+
+  roleText: {
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: "0.12em",
+    color: "#91a7be",
+    marginBottom: 8,
+  },
+
+  messageText: {
+    lineHeight: 1.6,
+    whiteSpace: "pre-wrap",
+  },
+
+  messageImage: {
+    width: "100%",
+    maxHeight: 260,
+    objectFit: "cover",
+    borderRadius: 14,
+    marginTop: 12,
+  },
+
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.78)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 12,
+    zIndex: 9999,
+  },
+
+  modalCard: {
+    width: "100%",
+    height: "92vh",
+    maxWidth: 1100,
+    background: "#04101f",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 24,
+    padding: 16,
+    display: "flex",
+    flexDirection: "column",
+    boxSizing: "border-box",
+  },
+
+  modalHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 14,
+  },
+
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 800,
+  },
+
+  modalCodeBlock: {
+    flex: 1,
+    margin: 0,
+    width: "100%",
+    overflow: "auto",
+    background: "#020814",
+    borderRadius: 20,
+    border: "1px solid rgba(255,255,255,0.06)",
+    padding: 18,
+    boxSizing: "border-box",
+    fontSize: 15,
+    lineHeight: 1.65,
+    whiteSpace: "pre",
+    color: "#eaf4ff",
+  },
+};
+
+export default App;
