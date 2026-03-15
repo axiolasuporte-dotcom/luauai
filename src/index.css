@@ -23,6 +23,10 @@ textarea {
   font: inherit;
 }
 
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
 .app-shell {
   min-height: 100vh;
   display: grid;
@@ -66,7 +70,8 @@ textarea {
 .sidebar,
 .hero,
 .chat-panel,
-.code-panel {
+.code-panel,
+.code-modal {
   border-radius: 28px;
 }
 
@@ -107,6 +112,7 @@ textarea {
   color: #06111d;
   font-size: 28px;
   font-weight: 800;
+  box-shadow: 0 12px 30px rgba(58, 240, 160, 0.25);
 }
 
 .eyebrow {
@@ -162,14 +168,16 @@ textarea {
 
 .soft-btn,
 .ghost-btn,
-.send-btn {
+.send-btn,
+.icon-btn {
   border: none;
   cursor: pointer;
   transition: 0.18s ease;
 }
 
 .soft-btn,
-.ghost-btn {
+.ghost-btn,
+.icon-btn {
   padding: 12px 14px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.05);
@@ -178,7 +186,8 @@ textarea {
 }
 
 .soft-btn:hover,
-.ghost-btn:hover {
+.ghost-btn:hover,
+.icon-btn:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.08);
 }
@@ -244,6 +253,10 @@ textarea {
   gap: 12px;
   align-items: center;
   margin-bottom: 14px;
+}
+
+.panel-head-code {
+  align-items: flex-start;
 }
 
 .status-dot-wrap {
@@ -358,6 +371,7 @@ textarea {
   background: linear-gradient(135deg, #3af0a0, #45b4ff);
   color: #08111d;
   font-weight: 800;
+  box-shadow: 0 12px 28px rgba(69, 180, 255, 0.22);
 }
 
 .send-btn:disabled {
@@ -365,14 +379,101 @@ textarea {
   cursor: not-allowed;
 }
 
-.code-panel pre {
+.code-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+}
+
+.copy-icon {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+}
+
+.copy-square {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  border: 1.8px solid #eaf2ff;
+}
+
+.copy-square-back {
+  top: 1px;
+  left: 1px;
+  opacity: 0.6;
+}
+
+.copy-square-front {
+  top: 5px;
+  left: 5px;
+  background: rgba(9, 16, 31, 0.8);
+}
+
+.code-expand-btn {
+  padding-inline: 16px;
+}
+
+.code-block {
   margin: 0;
-  padding: 16px;
-  border-radius: 20px;
-  background: rgba(0,0,0,0.34);
+  padding: 18px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(3, 8, 20, 0.9), rgba(2, 5, 14, 0.95));
   border: 1px solid rgba(255,255,255,0.08);
   overflow: auto;
   max-height: 70vh;
+  color: #dff2ff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.code-block code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.code-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: rgba(2, 6, 14, 0.76);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.code-modal {
+  width: min(1180px, 100%);
+  height: min(92vh, 100%);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-head {
+  margin-bottom: 12px;
+}
+
+.code-block-expanded {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
 }
 
 @media (max-width: 1100px) {
@@ -394,6 +495,7 @@ textarea {
 @media (max-width: 700px) {
   .app-shell {
     padding: 12px;
+    gap: 14px;
   }
 
   .hero h2 {
@@ -407,5 +509,43 @@ textarea {
 
   .bubble {
     max-width: 100%;
+  }
+
+  .sidebar,
+  .hero,
+  .chat-panel,
+  .code-panel,
+  .code-modal {
+    border-radius: 22px;
+  }
+
+  .panel-head-code {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .code-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .code-block {
+    max-height: 320px;
+    padding: 14px;
+  }
+
+  .code-block code {
+    font-size: 12.5px;
+  }
+
+  .code-modal-overlay {
+    padding: 10px;
+    align-items: flex-end;
+  }
+
+  .code-modal {
+    width: 100%;
+    height: 88vh;
+    border-radius: 24px 24px 0 0;
   }
 }

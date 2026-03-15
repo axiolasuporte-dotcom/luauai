@@ -69,7 +69,8 @@ export default function App() {
   const [pendingImage, setPendingImage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('Pronto.');
-  const [copied, setCopied] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [isCodeExpanded, setIsCodeExpanded] = useState(false);
   const [code, setCode] = useState(`-- Exemplo Luau\nlocal Players = game:GetService("Players")\n\nlocal function onPlayerAdded(player)\n    print("Jogador entrou:", player.Name)\nend\n\nPlayers.PlayerAdded:Connect(onPlayerAdded)`);
 
   useEffect(() => {
@@ -87,6 +88,10 @@ export default function App() {
   const canSend = useMemo(() => {
     return Boolean(settings.apiUrl.trim()) && (Boolean(input.trim()) || Boolean(pendingImage)) && !loading;
   }, [settings.apiUrl, input, pendingImage, loading]);
+
+  const showExpandCode = useMemo(() => {
+    return code.length > 420 || code.split('\n').length > 14;
+  }, [code]);
 
   function updateSetting(key, value) {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -135,9 +140,9 @@ export default function App() {
   async function copyCode() {
     try {
       await navigator.clipboard.writeText(code);
-      setCopied(true);
+      setCodeCopied(true);
       setStatus('Código copiado.');
-      setTimeout(() => setCopied(false), 1200);
+      setTimeout(() => setCodeCopied(false), 1200);
     } catch {
       setStatus('Não consegui copiar o código.');
     }
@@ -223,135 +228,180 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
-      <div className="aurora aurora-a" />
-      <div className="aurora aurora-b" />
+    <>
+      <div className="app-shell">
+        <div className="aurora aurora-a" />
+        <div className="aurora aurora-b" />
 
-      <aside className="sidebar glass">
-        <div className="brand-box">
-          <div className="brand-icon">L</div>
-          <div>
-            <div className="eyebrow">AXIOLA LABS</div>
-            <h1>Luau AI</h1>
-            <p>Visual de app, histórico salvo e leitura de imagem.</p>
-          </div>
-        </div>
-
-        <div className="section-block">
-          <div className="section-title">Conexão</div>
-          <label>Endpoint</label>
-          <input value={settings.apiUrl} onChange={(e) => updateSetting('apiUrl', e.target.value)} placeholder="http://localhost:3000/api/chat" />
-
-          <label>Token</label>
-          <input value={settings.apiKey} onChange={(e) => updateSetting('apiKey', e.target.value)} placeholder="Vazio no backend local" type="password" />
-
-          <label>Modelo</label>
-          <input value={settings.model} onChange={(e) => updateSetting('model', e.target.value)} placeholder="gemini-2.5-flash" />
-
-          <label>System prompt</label>
-          <textarea value={settings.systemPrompt} onChange={(e) => updateSetting('systemPrompt', e.target.value)} />
-        </div>
-
-        <div className="section-block">
-          <div className="section-title">Ações</div>
-          <div className="quick-grid">
-            {starterPrompts.map((prompt) => (
-              <button key={prompt} className="soft-btn" onClick={() => usePrompt(prompt)}>
-                {prompt}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="section-block section-row">
-          <button className="ghost-btn" onClick={clearHistory}>Limpar histórico</button>
-          <button className="ghost-btn" onClick={copyCode}>{copied ? 'Copiado' : 'Copiar código'}</button>
-        </div>
-      </aside>
-
-      <main className="main-panel">
-        <section className="hero glass">
-          <div>
-            <div className="eyebrow">MULTIMODAL • LOCAL • GEMINI</div>
-            <h2>Seu app de IA para Lua/Luau</h2>
-            <p>
-              Conversa salva, visual mais bonito, anexos de imagem, leitura de prints e foco em programação legítima.
-            </p>
-          </div>
-          <div className="hero-stats">
-            <div className="stat-card">
-              <span>Mensagens</span>
-              <strong>{messages.length}</strong>
-            </div>
-            <div className="stat-card">
-              <span>Status</span>
-              <strong>{loading ? 'Pensando' : 'Online'}</strong>
+        <aside className="sidebar glass">
+          <div className="brand-box">
+            <div className="brand-icon">L</div>
+            <div>
+              <div className="eyebrow">AXIOLA LABS</div>
+              <h1>Luau AI</h1>
+              <p>Visual de app, histórico salvo e leitura de imagem.</p>
             </div>
           </div>
-        </section>
 
-        <section className="content-grid">
-          <div className="chat-panel glass">
-            <div className="panel-head">
-              <div>
-                <div className="panel-title">Chat</div>
-                <div className="panel-subtitle">{status}</div>
+          <div className="section-block">
+            <div className="section-title">Conexão</div>
+            <label>Endpoint</label>
+            <input value={settings.apiUrl} onChange={(e) => updateSetting('apiUrl', e.target.value)} placeholder="http://localhost:3000/api/chat" />
+
+            <label>Token</label>
+            <input value={settings.apiKey} onChange={(e) => updateSetting('apiKey', e.target.value)} placeholder="Vazio no backend local" type="password" />
+
+            <label>Modelo</label>
+            <input value={settings.model} onChange={(e) => updateSetting('model', e.target.value)} placeholder="gemini-2.5-flash" />
+
+            <label>System prompt</label>
+            <textarea value={settings.systemPrompt} onChange={(e) => updateSetting('systemPrompt', e.target.value)} />
+          </div>
+
+          <div className="section-block">
+            <div className="section-title">Ações</div>
+            <div className="quick-grid">
+              {starterPrompts.map((prompt) => (
+                <button key={prompt} className="soft-btn" onClick={() => usePrompt(prompt)}>
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="section-block section-row">
+            <button className="ghost-btn" onClick={clearHistory}>Limpar histórico</button>
+            <button className="ghost-btn" onClick={copyCode}>{codeCopied ? 'Copiado' : 'Copiar código'}</button>
+          </div>
+        </aside>
+
+        <main className="main-panel">
+          <section className="hero glass">
+            <div>
+              <div className="eyebrow">MULTIMODAL • LOCAL • GEMINI</div>
+              <h2>Seu app de IA para Lua/Luau</h2>
+              <p>
+                Conversa salva, visual mais bonito, anexos de imagem, leitura de prints e foco em programação legítima.
+              </p>
+            </div>
+            <div className="hero-stats">
+              <div className="stat-card">
+                <span>Mensagens</span>
+                <strong>{messages.length}</strong>
               </div>
-              <div className="status-dot-wrap">
-                <span className={`status-dot ${loading ? 'busy' : 'ok'}`} />
+              <div className="stat-card">
+                <span>Status</span>
+                <strong>{loading ? 'Pensando' : 'Online'}</strong>
               </div>
             </div>
+          </section>
 
-            <div className="chat-feed">
-              {messages.map((msg) => (
-                <div key={msg.id} className={`bubble ${msg.role === 'user' ? 'bubble-user' : 'bubble-assistant'}`}>
-                  <div className="bubble-meta">{msg.role}</div>
-                  <div className="bubble-text">{msg.content}</div>
-                  {msg.image?.dataUrl && (
-                    <img className="chat-image" src={msg.image.dataUrl} alt={msg.image.name || 'imagem enviada'} />
+          <section className="content-grid">
+            <div className="chat-panel glass">
+              <div className="panel-head">
+                <div>
+                  <div className="panel-title">Chat</div>
+                  <div className="panel-subtitle">{status}</div>
+                </div>
+                <div className="status-dot-wrap">
+                  <span className={`status-dot ${loading ? 'busy' : 'ok'}`} />
+                </div>
+              </div>
+
+              <div className="chat-feed">
+                {messages.map((msg) => (
+                  <div key={msg.id} className={`bubble ${msg.role === 'user' ? 'bubble-user' : 'bubble-assistant'}`}>
+                    <div className="bubble-meta">{msg.role}</div>
+                    <div className="bubble-text">{msg.content}</div>
+                    {msg.image?.dataUrl && (
+                      <img className="chat-image" src={msg.image.dataUrl} alt={msg.image.name || 'imagem enviada'} />
+                    )}
+                  </div>
+                ))}
+                {loading && <div className="bubble bubble-assistant"><div className="bubble-meta">assistant</div><div className="bubble-text">Gerando resposta...</div></div>}
+                <div ref={chatEndRef} />
+              </div>
+
+              {pendingImage && (
+                <div className="attachment-box">
+                  <img src={pendingImage.dataUrl} alt={pendingImage.name} />
+                  <div className="attachment-info">
+                    <strong>{pendingImage.name}</strong>
+                    <span>{pendingImage.mimeType}</span>
+                  </div>
+                  <button className="ghost-btn" onClick={clearImage}>Remover</button>
+                </div>
+              )}
+
+              <div className="composer">
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Peça código, análise, explicação, revisão ou mande uma imagem com contexto."
+                />
+                <div className="composer-actions">
+                  <button className="ghost-btn" onClick={() => fileInputRef.current?.click()}>Enviar imagem</button>
+                  <button className="send-btn" onClick={sendMessage} disabled={!canSend}>Enviar</button>
+                </div>
+                <input ref={fileInputRef} hidden type="file" accept="image/*" onChange={handlePickImage} />
+              </div>
+            </div>
+
+            <div className="code-panel glass">
+              <div className="panel-head panel-head-code">
+                <div>
+                  <div className="panel-title">Saída de código</div>
+                  <div className="panel-subtitle">Blocos detectados na resposta aparecem aqui.</div>
+                </div>
+
+                <div className="code-actions">
+                  <button className="icon-btn" onClick={copyCode} title="Copiar código" aria-label="Copiar código">
+                    <span className="copy-icon" aria-hidden="true">
+                      <span className="copy-square copy-square-back" />
+                      <span className="copy-square copy-square-front" />
+                    </span>
+                  </button>
+
+                  {showExpandCode && (
+                    <button className="ghost-btn code-expand-btn" onClick={() => setIsCodeExpanded(true)}>
+                      Maximizar
+                    </button>
                   )}
                 </div>
-              ))}
-              {loading && <div className="bubble bubble-assistant"><div className="bubble-meta">assistant</div><div className="bubble-text">Gerando resposta...</div></div>}
-              <div ref={chatEndRef} />
-            </div>
-
-            {pendingImage && (
-              <div className="attachment-box">
-                <img src={pendingImage.dataUrl} alt={pendingImage.name} />
-                <div className="attachment-info">
-                  <strong>{pendingImage.name}</strong>
-                  <span>{pendingImage.mimeType}</span>
-                </div>
-                <button className="ghost-btn" onClick={clearImage}>Remover</button>
               </div>
-            )}
 
-            <div className="composer">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Peça código, análise, explicação, revisão ou mande uma imagem com contexto."
-              />
-              <div className="composer-actions">
-                <button className="ghost-btn" onClick={() => fileInputRef.current?.click()}>Enviar imagem</button>
-                <button className="send-btn" onClick={sendMessage} disabled={!canSend}>Enviar</button>
-              </div>
-              <input ref={fileInputRef} hidden type="file" accept="image/*" onChange={handlePickImage} />
+              <pre className="code-block"><code>{code}</code></pre>
             </div>
-          </div>
+          </section>
+        </main>
+      </div>
 
-          <div className="code-panel glass">
-            <div className="panel-head">
+      {isCodeExpanded && (
+        <div className="code-modal-overlay" onClick={() => setIsCodeExpanded(false)}>
+          <div className="code-modal glass" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-head panel-head-code modal-head">
               <div>
-                <div className="panel-title">Saída de código</div>
-                <div className="panel-subtitle">Blocos detectados na resposta aparecem aqui.</div>
+                <div className="panel-title">Código completo</div>
+                <div className="panel-subtitle">Visualização expandida para ler o código inteiro.</div>
+              </div>
+
+              <div className="code-actions">
+                <button className="icon-btn" onClick={copyCode} title="Copiar código" aria-label="Copiar código">
+                  <span className="copy-icon" aria-hidden="true">
+                    <span className="copy-square copy-square-back" />
+                    <span className="copy-square copy-square-front" />
+                  </span>
+                </button>
+                <button className="ghost-btn code-expand-btn" onClick={() => setIsCodeExpanded(false)}>
+                  Fechar
+                </button>
               </div>
             </div>
-            <pre><code>{code}</code></pre>
+
+            <pre className="code-block code-block-expanded"><code>{code}</code></pre>
           </div>
-        </section>
-      </main>
-    </div>
+        </div>
+      )}
+    </>
   );
 }
