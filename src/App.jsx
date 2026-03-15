@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
+import { Share } from "@capacitor/share";
 
 const defaultApi = "https://luauai-api.onrender.com/api/chat";
 const STORAGE_KEY = "luau-ai-state-v3";
@@ -107,20 +109,38 @@ Players.PlayerAdded:Connect(onPlayerAdded)`;
     } catch {}
   }
 
-  function downloadCode() {
+  async function downloadCode() {
     try {
-      const blob = new Blob([detectedCode], { type: "text/plain;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "codigo-luau.txt";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      const fileName = `codigo-luau-${Date.now()}.txt`;
+
+      const result = await Filesystem.writeFile({
+        path: fileName,
+        data: detectedCode,
+        directory: Directory.Documents,
+        encoding: Encoding.UTF8,
+        recursive: true,
+      });
+
+      try {
+        await Share.share({
+          title: "Código Luau",
+          text: "Arquivo gerado pelo app",
+          url: result.uri,
+          dialogTitle: "Salvar ou compartilhar código",
+        });
+      } catch {}
+
       setDownloadOk(true);
       setTimeout(() => setDownloadOk(false), 1400);
-    } catch {}
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `Não consegui salvar o arquivo. Detalhe: ${err?.message || "erro desconhecido"}`,
+        },
+      ]);
+    }
   }
 
   async function sendMessage() {
@@ -290,7 +310,7 @@ Players.PlayerAdded:Connect(onPlayerAdded)`;
           </div>
 
           {copyOk ? <div style={styles.toast}>Código copiado</div> : null}
-          {downloadOk ? <div style={styles.toast}>Download iniciado</div> : null}
+          {downloadOk ? <div style={styles.toast}>Arquivo salvo</div> : null}
 
           <div style={styles.codeOuter}>
             <pre style={styles.codeBlock}>
@@ -596,7 +616,6 @@ const styles = {
     width: 2,
     height: 10,
     background: "#ffffff",
-    boxShadow: "0 0 0 1px rgba(255,255,255,0.02)",
   },
 
   downloadBase: {
@@ -606,7 +625,6 @@ const styles = {
     width: 12,
     height: 2,
     background: "#ffffff",
-    boxShadow: "0 -6px 0 0 transparent",
     borderRadius: 2,
   },
 
