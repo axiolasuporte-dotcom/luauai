@@ -5,6 +5,7 @@ workflows:
 
     environment:
       node: 20
+      java: 21
 
     scripts:
       - name: Install dependencies
